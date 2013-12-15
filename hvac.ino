@@ -1,12 +1,19 @@
 /*
-  HVAC 0.0.0
+  HVAC 0.0.1
  */
+
+// LOOP_DELAY defines the delay in milliseconds between the main loop execution. 1000 = 1 sec.
+#define LOOP_DELAY 1000
+// SAVE_LOOP defines the amount of loops that needs to be processed before writing new values to EEPROM
+#define SAVE_LOOP 4000
+// STARTUP_LOOP defines the number of loop counts before the switching logic kicks in for switching on the heating.
+// This is to accomodate the digital lowpass filter and incorrent temperature reading when we are starting up the controller
+#define STARTUP_LOOP 60
  
 // Pin 13 has an LED connected on most Arduino boards.
 int led = 13;
-
 int saveLoop = 0;
-#define SAVE_LOOP 4000
+int startupLoop = 0;
 
 boolean controller_enabled = true;
 double sensorValue = 0;
@@ -99,7 +106,6 @@ void setup() {
   lcd.print(lowLimit, 1);
   
   rtd.setPins(8,9,0); // We don't use a multiplexer, but the pins are still set accordingly
-  //rtd.calibration(0, 0.12235649, -5.17);
   rtd.calibration(0, 0.135783, -7.74602);
   
   analogReference(INTERNAL); // if we need to switch to 1.1v reference
@@ -121,7 +127,9 @@ void loop() {
     lcd.setCursor(9,0);
     lcd.print("T");
     lcd.print(sensorValue, 1);
-    if(sensorValue < lowLimit && sensorValue < highLimit && highLimit > 0.00 && switchState == LOW) {
+    
+    // Switching Logic
+    if(sensorValue < lowLimit && sensorValue < highLimit && highLimit > 0.00 && switchState == LOW && startupLoop >= STARTUP_LOOP) {
       Serial.println("Switching on Heating");
       switchState = HIGH;
     
@@ -146,6 +154,7 @@ void loop() {
       lcd.print("ALARM");
       switchState = LOW; 
     }
+    // Switching Logic end
     digitalWrite(led, switchState);
   
     // Do we need to save or just increment the saveLoop?
@@ -188,6 +197,9 @@ void loop() {
     lcd.print("!!!!!");
   }
   else if (!controller_enabled) {
+    // This doesn't work in practise, the readings are still 10C off/lower when
+    // the controller is enabled - needs to be fixed because it currently
+    // triggers the switch incorrectly.
     lcd.setCursor(10,0);
     analogReference(INTERNAL);
     sensorValue = digitalLowPass(sensorValue, rtd.getTemperature(0), 0.90);
@@ -223,5 +235,9 @@ void loop() {
     controller_enabled = true;
   }
  
-  delay(1000);  // wait for a second
+  if(startupLoop < STARTUP_LOOP) {
+    startupLoop++; 
+  }
+ 
+  delay(LOOP_DELAY);  // wait
 }
